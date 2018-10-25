@@ -36,7 +36,7 @@ namespace NosCore.Tests.HandlerTests
     {
         private const string ConfigurationPath = "../../../configuration";
         private readonly ClientSession _session = new ClientSession(null, new List<PacketController> { new DefaultPacketController() }, null);
-        private readonly ClientSession _targetSession = new ClientSession(null, new List<PacketController> { new DefaultPacketController() }, null);
+        private ClientSession _targetSession = new ClientSession(null, new List<PacketController> { new DefaultPacketController() }, null);
         private CharacterDto _chara;
         private CharacterDto _targetChar;
         private DefaultPacketController _handler;
@@ -102,6 +102,8 @@ namespace NosCore.Tests.HandlerTests
 
             _targetSession.SetCharacter(_targetChar.Adapt<Character>());
             _targetSession.Character.MapInstance = new MapInstance(new Map(), Guid.NewGuid(), true, MapInstanceType.BaseMapInstance, null);
+            _session.Character.CharacterId = 1;
+            _targetSession.Character.CharacterId = 2;
 
             Broadcaster.Instance.RegisterSession(_session);
             Broadcaster.Instance.RegisterSession(_targetSession);
@@ -113,7 +115,7 @@ namespace NosCore.Tests.HandlerTests
             _targetSession.Character.FriendRequestCharacters.TryAdd(0, _session.Character.CharacterId);
             var finsPacket = new FinsPacket
             {
-                CharacterId = _targetChar.CharacterId,
+                CharacterId = _targetSession.Character.CharacterId,
                 Type = FinsPacketType.Accepted
             };
             _handler.AddFriend(finsPacket);
@@ -121,10 +123,100 @@ namespace NosCore.Tests.HandlerTests
                 && _targetSession.Character.CharacterRelations.Any(s => s.Value.RelatedCharacterId == _session.Character.CharacterId));
         }
 
-        //TODO add add friend when disconnected
-        //TODO add add blacklist when disconnected
-        //TODO add delete friend when disconnected
-        //TODO add delete blacklist when disconnected
+        [TestMethod]
+        public void Test_Add_Friend_When_Disconnected()
+        {
+            _targetSession.Disconnect();
+            Broadcaster.Instance.UnregisterSession(_targetSession);
+            _targetSession = null;
+
+            var finsPacket = new FinsPacket
+            {
+                CharacterId = _targetChar.CharacterId,
+                Type = FinsPacketType.Accepted
+            };
+            _handler.AddFriend(finsPacket);
+
+            Assert.IsTrue(_session.Character.CharacterRelations.IsEmpty);
+        }
+
+        [TestMethod]
+        public void Test_Blacklist_When_Disconnected()
+        {
+            var charId = _targetSession.Character.CharacterId;
+            _targetSession.Disconnect();
+            Broadcaster.Instance.UnregisterSession(_targetSession);
+            _targetSession = null;
+
+            var blinsPacket = new BlInsPacket
+            {
+                CharacterId = charId
+            };
+
+            _handler.BlackListAdd(blinsPacket);
+            Assert.IsFalse(_session.Character.CharacterRelations.Any(s => s.Value.RelationType == CharacterRelationType.Blocked));
+        }
+
+        [TestMethod]
+        public void Test_Delete_Friend_When_Disconnected()
+        {
+            var fdelPacket = new FdelPacket
+            {
+                CharacterId = _targetChar.CharacterId
+            };
+
+            _targetSession.Character.FriendRequestCharacters.TryAdd(0, _session.Character.CharacterId);
+            var finsPacket = new FinsPacket
+            {
+                CharacterId = _targetChar.CharacterId,
+                Type = FinsPacketType.Accepted
+            };
+            _handler.AddFriend(finsPacket);
+
+            _targetSession.Disconnect();
+            Broadcaster.Instance.UnregisterSession(_targetSession);
+            _targetSession = null;
+
+            _handler.DeleteFriend(fdelPacket);
+
+            Assert.IsTrue(_session.Character.CharacterRelations.IsEmpty);
+        }
+
+        [TestMethod]
+        public void Test_Delete_Blacklist_When_Disconnected()
+        {
+            var charId = _targetSession.Character.CharacterId;
+            var blinsPacket = new BlInsPacket
+            {
+                CharacterId = _targetSession.Character.CharacterId
+            };
+
+            _handler.BlackListAdd(blinsPacket);
+
+            _targetSession.Disconnect();
+            Broadcaster.Instance.UnregisterSession(_targetSession);
+            _targetSession = null;
+
+            var bldelPacket = new BlDelPacket
+            {
+                CharacterId = charId
+            };
+
+            _handler.BlackListDelete(bldelPacket);
+            Assert.IsTrue(_session.Character.CharacterRelations.All(s => s.Value.RelatedCharacterId != charId));
+        }
+
+        [TestMethod]
+        public void Test_Add_Not_Requested_Friend()
+        {
+            var finsPacket = new FinsPacket
+            {
+                CharacterId = _targetChar.CharacterId,
+                Type = FinsPacketType.Accepted
+            };
+            _handler.AddFriend(finsPacket);
+            Assert.IsTrue(_session.Character.CharacterRelations.IsEmpty && _targetSession.Character.CharacterRelations.IsEmpty);
+        }
 
         [TestMethod]
         public void Test_Add_Distant_Friend()
